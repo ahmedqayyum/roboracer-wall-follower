@@ -10,51 +10,55 @@ Simulator HUD after that longer run (25 laps, best lap 9.5 s):
 
 ![Simulator HUD showing a best lap of 9.5 s after 25 laps](docs/best_lap_hud.png)
 
-The wall follower is a ROS 2 node at [`autodrive_devkit/autodrive_roboracer/wall_follow_node.py`](autodrive_devkit/autodrive_roboracer/wall_follow_node.py), registered in `setup.py` as `wall_follow_node`.
+The main code is in
+[`wall_follow_node.py`](autodrive_devkit/autodrive_roboracer/wall_follow_node.py).
 
 ## How it works
 
-1. **Wall geometry from two beams.** On each side a beam at ±90° (`b`) and one swept `theta` (50°) toward the front (`a`) give the wall angle `alpha = atan2(a·cosθ − b, a·sinθ)`, the perpendicular distance `D = b·cosα`, and the distance projected one lookahead `L` ahead, `D' = D + L·sinα`. Small windows of beams are averaged, and `inf`/`nan` returns are replaced by `range_max`.
-2. **PD steering on the wall error.** `mode=center` (default) drives on `error = ½(D'_left − D'_right)`; `mode=left` / `mode=right` hold `desired_distance` from one wall. A positive error means "steer left", matching the simulator's convention (+1 = full left ≈ 0.52 rad). The steering command is lightly low-pass filtered.
-3. **Corner anticipation.** The 90° beams cannot see a corner coming, so a second term compares how open the front-left and front-right sectors are (mean range over 20°–70° each side, clipped to `sector_clip`) and adds `kf · (open_left − open_right)` to the steering angle. On a straight both sectors are symmetric and the term is zero; approaching a turn the inside sector opens up and the car starts turning before the nose reaches the outer wall.
-4. **Throttle scheduling.** Forward clearance only counts beams whose hit point is inside the car's path (`|r·sin a| ≤ path_half_width`), so corridor walls do not slow the car. Throttle interpolates between `throttle_min` and `throttle_max` using the smaller of the clearance fraction and `(1 − |steer|)²`.
-5. **Safety.** Below `brake_distance` ahead the car brakes hard and steers full lock toward the more open forward sector. A 0.1 s watchdog publishes zero throttle if the LiDAR stream goes stale.
+The car uses its LiDAR like a set of distance sensors around it.
 
-## Run
+1. It checks how far away the walls are on the left and right.
+2. It steers toward the middle so it does not get too close to either wall.
+3. It also looks diagonally ahead. This lets it notice a corner and start
+   turning before it reaches the wall.
+4. It drives faster when the road ahead is clear and slows down for corners.
+5. If it gets too close to something, it brakes and turns toward the side with
+   more room.
 
-In the container, after `colcon build && source install/setup.bash` and with the bridge running:
+The car's speed comes from odometry, so the node can compare its current speed
+with the speed it wants and brake when needed.
+
+## Running it
+
+With the bridge running, build the package inside the container:
+
+```bash
+cd /home/autodrive_devkit
+colcon build
+source install/setup.bash
+```
+
+Then run the wall follower:
 
 ```bash
 ros2 run autodrive_roboracer wall_follow_node
 ```
 
-Tune from the command line without rebuilding, e.g.:
+I changed the speeds from the command line while testing. For example:
 
 ```bash
 ros2 run autodrive_roboracer wall_follow_node --ros-args \
-  -p mode:=center -p kp:=1.0 -p kd:=0.1 -p kf:=0.6 -p lookahead:=0.6 \
-  -p throttle_max:=0.55 -p throttle_min:=0.2 -p clear_far:=5.0 -p clear_near:=1.2
+  -p v_max:=4.0 -p v_corner:=1.5 -p a_brake:=3.0
 ```
 
-| Parameter | Default | Meaning |
-|---|---|---|
-| `mode` | `center` | `center`, `left`, or `right` |
-| `desired_distance` | `0.8` | target gap to the followed wall (left/right modes) [m] |
-| `lookahead` | `0.6` | projection distance ahead of the car [m] |
-| `theta_deg` | `30` | offset of the second beam from the 90° beam |
-| `kp`, `kd` | `1.0`, `0.10` | PD gains on the wall error (rad per m) |
-| `kf` | `0.6` | gain on the front-sector openness difference (rad per m) |
-| `sector_lo_deg`, `sector_hi_deg`, `sector_clip` | `20`, `70`, `2.5` | forward sectors used for corner anticipation |
-| `steer_smoothing` | `0.3` | low-pass factor on the steering command |
-| `debug_period` | `1.0` | telemetry log period [s], `0` to disable |
-| `throttle_max`, `throttle_min` | `0.55`, `0.2` | throttle on open straights / in tight spots |
-| `clear_far`, `clear_near` | `5.0`, `1.2` | clearance range mapped onto throttle [m] |
-| `brake_distance` | `0.6` | emergency manoeuvre threshold ahead [m] |
-| `front_cone_deg`, `path_half_width` | `45`, `0.35` | search cone and path width for forward clearance |
-
-Lap count, best lap, and collision count from the simulator are logged by the node as they change.
+- `v_max` is the speed on straights.
+- `v_corner` is the speed in hard turns.
+- A smaller `a_brake` value makes the car start braking earlier.
 
 ---
+
+<details>
+<summary>Original AutoDRIVE documentation</summary>
 
 # AutoDRIVE-RoboRacer Sim-Racing
 
@@ -284,3 +288,5 @@ series = {CCRIS'21}
 }
 ```
 This work has been published at **2021 International Conference on Control, Robotics and Intelligent System (CCRIS).** The publication can be found on [ACM Digital Library](https://dl.acm.org/doi/abs/10.1145/3483845.3483846).
+
+</details>
