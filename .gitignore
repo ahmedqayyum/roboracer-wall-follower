@@ -1,0 +1,16 @@
+.vscode
+
+# colcon artifacts
+build/
+install/
+log/
+
+# Simulator, recordings, macOS
+autodrive_simulator/
+*.mov
+*.mp4
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
